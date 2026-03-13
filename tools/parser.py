@@ -277,8 +277,8 @@ class LaTeXParser:
         # 从 after_pos 开始查找
         remaining = self.content[after_pos:]
         
-        # 跳过空白字符
-        remaining = remaining.lstrip()
+        # 跳过空白字符和简单的命令（如 \bigskip, \vspace 等）
+        remaining = self._skip_whitespace_and_commands(remaining)
         
         # 检查是否以 \begin{note} 开头
         note_match = re.match(
@@ -296,17 +296,18 @@ class LaTeXParser:
         """提取 solution 环境（在 note 之后）"""
         remaining = self.content[after_pos:]
         
+        # 跳过空白字符和简单的命令
+        remaining = self._skip_whitespace_and_commands(remaining)
+        
         # 如果有 note 环境，从 note 之后开始
         note_match = re.match(
             r'\\begin\{note\}.*?\\end\{note\}',
-            remaining.lstrip(),
+            remaining,
             re.DOTALL
         )
         if note_match:
-            remaining = remaining.lstrip()[note_match.end():]
-        
-        # 跳过空白字符
-        remaining = remaining.lstrip()
+            remaining = remaining[note_match.end():]
+            remaining = self._skip_whitespace_and_commands(remaining)
         
         # 检查是否以 \begin{solution} 开头
         solution_match = re.match(
@@ -361,6 +362,41 @@ class LaTeXParser:
         ]
         
         return '\n'.join(new_preamble)
+    
+    def _skip_whitespace_and_commands(self, text: str) -> str:
+        """
+        跳过空白字符和简单的 LaTeX 命令（如 \bigskip, \vspace{} 等）
+        注意：不跳过 \begin 和 \end 命令
+        """
+        text = text.lstrip()
+        
+        # 匹配简单命令的模式，但排除 \begin 和 \end
+        while True:
+            # 匹配无参数的命令（如 \bigskip, \smallskip）
+            match = re.match(r'\\(?!begin|end)[a-zA-Z]+\*?(?![a-zA-Z])', text)
+            if match:
+                text = text[match.end():].lstrip()
+                continue
+            
+            # 匹配带花括号参数的命令（如 \vspace{1em}）
+            match = re.match(r'\\(?!begin|end)[a-zA-Z]+\*?\{', text)
+            if match:
+                # 提取大括号内容
+                brace_start = match.end() - 1
+                brace_count = 0
+                for i, char in enumerate(text[brace_start:], start=brace_start):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            text = text[i+1:].lstrip()
+                            break
+                continue
+            
+            break
+        
+        return text
     
     @staticmethod
     def get_standalone_footer() -> str:
